@@ -34,9 +34,13 @@ def encode_face_from_image(image_path: str):
     return encodings[0]
 
 
-def encode_face_from_array(frame: np.ndarray):
-    """Encode faces from a numpy array (live camera frame)."""
-    rgb = frame[:, :, ::-1]  # BGR (OpenCV) → RGB (face_recognition)
+def encode_face_from_array(frame: np.ndarray, is_bgr: bool = False):
+    """
+    Encode faces from a numpy array (live camera frame).
+    Pass is_bgr=True if the array comes from OpenCV (BGR order).
+    WebRTC frames should be passed as RGB (is_bgr=False, the default).
+    """
+    rgb = frame[:, :, ::-1] if is_bgr else frame
     locations = face_recognition.face_locations(rgb, model='hog')
     encodings = face_recognition.face_encodings(rgb, locations)
     return locations, encodings
@@ -65,9 +69,12 @@ def remove_face(person_id: int):
         save_encodings(encodings)
 
 
-def recognize_faces(frame: np.ndarray, tolerance: float = 0.50):
+def recognize_faces(frame: np.ndarray, tolerance: float = 0.50, is_bgr: bool = False):
     """
     Detect all faces in a frame and match against known encodings.
+
+    frame    : numpy array, RGB by default. Pass is_bgr=True for OpenCV BGR arrays.
+    tolerance: match threshold — lower = stricter. 0.50 is a good default.
 
     Returns a list of dicts:
         [{'location': (top,right,bottom,left), 'person_id': int|None, 'name': str, 'confidence': float}]
@@ -76,34 +83,34 @@ def recognize_faces(frame: np.ndarray, tolerance: float = 0.50):
     if not known:
         return []
 
-    known_ids = list(known.keys())
+    known_ids       = list(known.keys())
     known_encodings = [known[pid]['encoding'] for pid in known_ids]
-    known_names = [known[pid]['name'] for pid in known_ids]
+    known_names     = [known[pid]['name']     for pid in known_ids]
 
-    locations, encodings = encode_face_from_array(frame)
+    locations, encodings = encode_face_from_array(frame, is_bgr=is_bgr)
     results = []
 
     for location, encoding in zip(locations, encodings):
-        distances = face_recognition.face_distance(known_encodings, encoding)
-        best_idx = int(np.argmin(distances))
-        best_distance = distances[best_idx]
-        confidence = round((1 - best_distance) * 100, 1)
+        distances   = face_recognition.face_distance(known_encodings, encoding)
+        best_idx    = int(np.argmin(distances))
+        best_dist   = distances[best_idx]
+        confidence  = round((1 - best_dist) * 100, 1)
 
-        if best_distance <= tolerance:
+        if best_dist <= tolerance:
             results.append({
-                'location': location,
+                'location':  location,
                 'person_id': known_ids[best_idx],
-                'name': known_names[best_idx],
+                'name':      known_names[best_idx],
                 'confidence': confidence,
-                'matched': True
+                'matched':   True
             })
         else:
             results.append({
-                'location': location,
+                'location':  location,
                 'person_id': None,
-                'name': 'Unknown',
+                'name':      'Unknown',
                 'confidence': confidence,
-                'matched': False
+                'matched':   False
             })
 
     return results
